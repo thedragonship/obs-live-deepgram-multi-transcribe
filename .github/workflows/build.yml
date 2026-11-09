@@ -1,0 +1,81 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows-installer
+          - os: macos-latest
+            artifact: macos-dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - name: Create macOS app icon
+        if: runner.os == 'macOS'
+        run: bash make_macos_icon.sh
+      - run: pyinstaller --clean --noconfirm obs-live-deepgram.spec
+      - name: Build Windows setup executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'installer/WebView2Setup.exe'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:APP_VERSION = $env:GITHUB_REF_NAME.TrimStart('v') } else { $env:APP_VERSION = '0.1.0' }
+          $compiler = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+          if ($compiler) { $compilerPath = $compiler.Source } else {
+            $roots = @("$env:ProgramFiles", "${env:ProgramFiles(x86)}")
+            $compilerPath = $null
+            foreach ($root in $roots) {
+              $found = Get-ChildItem -Path $root -Directory -Filter 'Inno Setup*' -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-ChildItem -Path $_.FullName -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue } |
+                Select-Object -First 1
+              if ($found) { $compilerPath = $found.FullName; break }
+            }
+          }
+          if (-not $compilerPath) { throw 'Inno Setup Compiler (ISCC.exe) was not found.' }
+          & $compilerPath installer/obs-live-deepgram.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build macOS disk image
+        if: runner.os == 'macOS'
+        run: hdiutil create -volname "OBS Live Deepgram" -srcfolder "dist/OBS Live Deepgram.app" -ov -format UDZO obs-live-deepgram-macos.dmg
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist-installer/*.exe
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: ${{ matrix.artifact }}
+          path: obs-live-deepgram-macos.dmg
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-files
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
+          generate_release_notes: true

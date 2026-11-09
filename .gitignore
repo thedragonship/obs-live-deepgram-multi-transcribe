@@ -1,0 +1,12 @@
+.venv/
+.tools/
+__pycache__/
+*.py[cod]
+build/
+dist/
+dist-installer/
+installer/WebView2Setup.exe
+*.spec.bak
+.DS_Store
+dist-*/
+.tools/gh-config-dragonship/

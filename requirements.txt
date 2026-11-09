@@ -1,0 +1,5 @@
+deepgram-sdk>=7.0.0,<8.0.0
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.34,<1.0
+pywebview>=5.4,<7.0
+pyinstaller>=6.10,<7.0

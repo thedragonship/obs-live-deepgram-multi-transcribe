@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-64 0 688 688">
+  <title>DragonShip violet app icon</title>
+  <defs>
+    <filter id="violet-logo" color-interpolation-filters="sRGB">
+      <feColorMatrix values="0 0 0 0 0.6078 0 0 0 0 0.4824 0 0 0 0 1 0 0 0 3.125 0" />
+    </filter>
+  </defs>
+  <svg x="0" y="0" width="560" height="688" viewBox="0 0 560 688" filter="url(#violet-logo)">
+    <image href="watermark-red.svg" width="560" height="688" />
+  </svg>
+</svg>
