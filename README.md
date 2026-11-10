@@ -77,10 +77,6 @@ Dans l'onglet **Session & OBS**, choisissez les couleurs des noms de six locuteu
 
 ## Installation pour les utilisateurs
 
-L'interface de l'application est intégrée dans une fenêtre de bureau et utilise un thème graphite cyberpunk à accents rouges ; le filigrane DragonShip fourni s'affiche en fond à 50 % d'opacité (avec sa transparence interne d'origine). Le bouton d'actualisation des entrées audio se trouve à côté du sélecteur de périphérique.
-
-L'icône de l'application reprend l'emblème DragonShip, recadré sur le logo, en violet (#9B7BFF) avec fond transparent.
-
 Téléchargez l'installateur depuis la section **Releases** du dépôt GitHub :
 
 - **Windows** : `obs-live-deepgram-setup-<version>.exe`. L'installateur place l'application dans Program Files, crée les raccourcis sélectionnés et la lance. Python et les dépendances de l'application sont embarqués. Il vérifie si le runtime Microsoft Edge WebView2 est présent et ne l'installe que s'il manque. Dans ce cas, le bootstrapper Microsoft nécessite Internet pour télécharger le runtime. Le setup n'est pas encore signé, donc Microsoft Defender SmartScreen peut afficher un avertissement.
