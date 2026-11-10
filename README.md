@@ -5,7 +5,7 @@
 
 Application de bureau légère pour afficher des sous-titres Deepgram en direct dans OBS. L'interface utilise la fenêtre native du système (WebView2 sur Windows, WebKit sur macOS) et reste un petit serveur local Python. OBS affiche une page locale séparée en tant que source navigateur.
 
-> État : prototype fonctionnel à compléter. Cette première version fournit la capture d'une entrée audio, la transcription en direct avec diarisation et l'overlay OBS. La traduction des sous-titres n'est pas encore incluse : la transcription multilingue n'est pas une traduction.
+> Fonctionnalités : capture d'une entrée audio, transcription en direct avec diarisation, traduction à la demande via LibreTranslate et overlay OBS. La transcription multilingue de Deepgram reconnaît plusieurs langues ; elle ne traduit pas le texte à elle seule.
 
 ## Fonctionnement
 
@@ -13,9 +13,16 @@ Application de bureau légère pour afficher des sous-titres Deepgram en direct 
 2. La même entrée peut contenir votre micro et l'audio du PC ; la diarisation distingue des changements de voix, mais ne garantit pas d'identifier chaque personne.
 3. L'application capture l'entrée dans le navigateur intégré, convertit l'audio en PCM 16 kHz mono et l'envoie au serveur local.
 4. Le serveur transmet les trames au WebSocket Deepgram via le SDK officiel Python `deepgram-sdk`. La clé API reste sur la machine et n'est jamais intégrée à l'overlay.
-5. L'overlay local `http://127.0.0.1:<port>/overlay` reçoit les résultats et affiche les locuteurs. Dans OBS, ajoutez une **Source navigateur** avec l'URL exacte montrée dans le tableau de bord.
+5. Quand le mode traduit est activé, les segments finalisés sont envoyés au service public LibreTranslate configuré dans l'application. L'audio reste envoyé à Deepgram ; aucun audio n'est transmis à LibreTranslate.
+6. L'overlay local `http://127.0.0.1:<port>/overlay` reçoit les résultats et affiche les locuteurs. Dans OBS, ajoutez une **Source navigateur** avec l'URL exacte montrée dans le tableau de bord. Le bouton du dashboard synchronise le mode original/traduit entre l'aperçu et OBS.
 
 L'audio est envoyé à Deepgram pour traitement. Consultez les conditions et la tarification Deepgram avant un stream prolongé. La clé API est enregistrée localement dans le fichier de configuration de votre profil utilisateur, séparé du dépôt : `%APPDATA%/obs-live-deepgram-multi-transcribe/config.json` sous Windows, `~/Library/Application Support/obs-live-deepgram-multi-transcribe/config.json` sous macOS, ou `$XDG_CONFIG_HOME/obs-live-deepgram-multi-transcribe/config.json` sous Linux. Le fichier n'est pas chiffré ; protégez votre compte utilisateur, utilisez une clé dédiée et révoquez-la si vous pensez qu'elle a été exposée.
+
+### Traduction libre via LibreTranslate
+
+La traduction est désactivée par défaut. Choisissez une langue cible dans **Configuration**, puis activez **Afficher la traduction** dans **Session & OBS**. Le bouton revient au texte original et arrête de mettre les nouveaux segments en file d'attente ; les segments déjà en file peuvent toutefois partir et finir leur traduction.
+
+Le dashboard envoie uniquement le texte final des segments au service public `translate.argosopentech.com` quand le mode traduit est actif. L'audio, la clé Deepgram et l'identité des locuteurs ne sont pas envoyés par la fonction de traduction. Le service public ne demande actuellement pas de clé à cette application et il n'y a aucun recours automatique à une API payante ; ses règles, quotas, délais et disponibilité peuvent toutefois changer. Comme pour tout service public en ligne, évitez cette fonction pour des conversations confidentielles et consultez la politique du fournisseur si la confidentialité est importante. La traduction peut ajouter du délai ou échouer si le service est indisponible ou limite les requêtes.
 
 ## Coûts Deepgram
 
@@ -75,7 +82,13 @@ Ces pilotes sont externes au projet et ne sont pas installés automatiquement.
 
 Dans l'onglet **Session & OBS**, choisissez les couleurs des noms de six locuteurs ; elles sont enregistrées localement et synchronisées avec l'overlay OBS. Chaque ligne disparaît après neuf secondes, de la plus ancienne à la plus récente. Utilisez **Copier l’URL OBS** pour coller l'adresse dans une **Source navigateur**. L’adresse complète n’est pas affichée dans le dashboard ; **Ouvrir l’overlay** permet de vérifier le rendu dans une fenêtre séparée. Port par défaut : `8765`. Taille conseillée : 1920 × 1080. L'overlay est transparent et se met à jour tant que l'application tourne.
 
+Choisissez la langue cible dans **Configuration**, puis cliquez sur **Afficher la traduction** dans **Session & OBS** pour basculer en direct entre texte original et texte traduit. Le même mode s'applique au dashboard et à l'overlay OBS. La traduction commence lorsque le segment Deepgram est finalisé, donc elle peut apparaître un peu après l'original. La sélection d'une langue source précise donne une meilleure détection ; avec **Détection multilingue**, le texte de chaque segment utilise la langue détectée par Deepgram quand elle est disponible.
+
 ## Installation pour les utilisateurs
+
+L'interface de l'application est intégrée dans une fenêtre de bureau et utilise un thème graphite cyberpunk à accents rouges ; le filigrane DragonShip fourni s'affiche en fond à 50 % d'opacité (avec sa transparence interne d'origine). Le bouton d'actualisation des entrées audio se trouve à côté du sélecteur de périphérique.
+
+L'icône de l'application reprend l'emblème DragonShip, recadré sur le logo, en violet (#9B7BFF) avec fond transparent.
 
 Téléchargez l'installateur depuis la section **Releases** du dépôt GitHub :
 
@@ -103,7 +116,7 @@ Pour une compilation manuelle macOS, exécutez `bash make_macos_icon.sh` avant P
 
 - Une seule entrée audio mixée ; pour des sous-titres séparés par source, il faut router micro et audio de bureau vers des entrées différentes et ajouter plusieurs sessions.
 - La diarisation attribue des indices (`Locuteur 1`, `Locuteur 2`), sans connaître les identités réelles. Sur un mix, les chevauchements et la musique peuvent réduire la précision.
-- Pas de traduction vers une langue cible dans cette version. La traduction nécessite un service texte distinct après la transcription ; elle doit être ajoutée avec une option activable pour maîtriser la latence et le coût.
+- La traduction utilise une instance publique, qui peut avoir de la latence, des limites ou des interruptions. Elle est désactivée par défaut et ne doit pas être utilisée pour du contenu confidentiel.
 - Pas de test sur un compte Deepgram ni de validation audio/OBS sur les deux systèmes depuis cet environnement.
 
 ## Dépannage
