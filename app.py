@@ -22,7 +22,7 @@ overlay_clients: set[WebSocket] = set()
 overlay_history: list[dict[str, Any]] = []
 translation_history: dict[str, dict[str, str]] = {}
 translation_mode_enabled = bool(load_settings().get("translationMode", False))
-LIBRETRANSLATE_URL = "https://translate.argosopentech.com"
+LIBRETRANSLATE_URL = "https://translate.cutie.dating"
 DEFAULT_OVERLAY_COLORS = {
     "1": "#ff5964", "2": "#ff9f43", "3": "#d789ff",
     "4": "#ffd166", "5": "#ff7892", "6": "#e6a3ff",
@@ -222,10 +222,10 @@ async def broadcast(payload: dict[str, Any]) -> None:
             for translation_id in tuple(translation_history):
                 if translation_id not in recent_ids:
                     translation_history.pop(translation_id, None)
-    elif payload.get("type") == "translation":
+    elif payload.get("type") in {"translation", "translation_error"}:
         translation_id = payload.get("id")
         if translation_id:
-            translation_history[str(translation_id)] = {"text": str(payload.get("text", ""))}
+            translation_history[str(translation_id)] = dict(payload)
             while len(translation_history) > 12:
                 translation_history.pop(next(iter(translation_history)))
     dead: list[WebSocket] = []
@@ -252,8 +252,8 @@ async def overlay_socket(ws: WebSocket) -> None:
         # has started do not appear empty until the next phrase is spoken.
         for payload in overlay_history:
             await ws.send_json(payload)
-        for translation_id, translation in translation_history.items():
-            await ws.send_json({"type": "translation", "id": translation_id, **translation})
+        for translation in translation_history.values():
+            await ws.send_json(translation)
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
@@ -274,7 +274,7 @@ async def live_socket(ws: WebSocket) -> None:
         client = AsyncDeepgramClient(api_key=api_key)
         loop = asyncio.get_running_loop()
         event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        translation_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue(maxsize=100)
+        translation_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue(maxsize=60)
         saved_translation = load_settings()
         translation_target = str(saved_translation.get("translationTarget", "en")).lower()
         connection_opened = asyncio.Event()
@@ -319,29 +319,58 @@ async def live_socket(ws: WebSocket) -> None:
                 raise RuntimeError("Deepgram n’a pas ouvert la connexion dans les 15 secondes.") from exc
             await ws.send_json({"type": "status", "state": "connected"})
 
-            async def translate_results() -> None:
-                async with httpx.AsyncClient(timeout=12.0) as translator:
-                    while True:
-                        item = await translation_queue.get()
+            async def translate_results(translator: httpx.AsyncClient) -> None:
+                while True:
+                    item = await translation_queue.get()
+                    try:
+                        if item["source"] != "auto" and item["source"] == item["target"]:
+                            translated_text = item["text"]
+                        else:
+                            translated_text = await libretranslate(
+                                translator, item["text"], item["source"], item["target"]
+                            )
+                        message = {"type": "translation", "id": item["id"], "text": translated_text, "target": item["target"]}
+                        await ws.send_json(message)
+                        await broadcast(message)
+                    except asyncio.CancelledError:
+                        raise
+                    except httpx.TimeoutException:
+                        message = {"type": "translation_error", "id": item["id"], "message": "Délai dépassé : le serveur de traduction ne répond pas. Le texte original est conservé."}
                         try:
-                            if item["source"] != "auto" and item["source"] == item["target"]:
-                                translated_text = item["text"]
-                            else:
-                                translated_text = await libretranslate(
-                                    translator, item["text"], item["source"], item["target"]
-                                )
-                            message = {"type": "translation", "id": item["id"], "text": translated_text, "target": item["target"]}
                             await ws.send_json(message)
-                            await broadcast(message)
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as exc:
-                            try:
-                                await ws.send_json({"type": "translation_error", "message": f"LibreTranslate : {exc}"})
-                            except Exception:
-                                pass
+                        except Exception:
+                            pass
+                        await broadcast(message)
+                    except httpx.ConnectError:
+                        message = {"type": "translation_error", "id": item["id"], "message": "Serveur de traduction injoignable (DNS ou réseau). Le texte original est conservé."}
+                        try:
+                            await ws.send_json(message)
+                        except Exception:
+                            pass
+                        await broadcast(message)
+                    except httpx.HTTPStatusError as exc:
+                        status_code = exc.response.status_code
+                        detail = "limite de requêtes atteinte" if status_code == 429 else "accès refusé" if status_code in (401, 403) else f"erreur HTTP {status_code}"
+                        message = {"type": "translation_error", "id": item["id"], "message": f"LibreTranslate : {detail}. Le texte original est conservé."}
+                        try:
+                            await ws.send_json(message)
+                        except Exception:
+                            pass
+                        await broadcast(message)
+                    except Exception:
+                        message = {"type": "translation_error", "id": item["id"], "message": "Erreur LibreTranslate. Le texte original est conservé."}
+                        try:
+                            await ws.send_json(message)
+                        except Exception:
+                            pass
+                        await broadcast(message)
 
-            translation_task = asyncio.create_task(translate_results())
+            async def run_translation_workers() -> None:
+                timeout = httpx.Timeout(10.0, connect=3.0)
+                async with httpx.AsyncClient(timeout=timeout) as translator:
+                    await asyncio.gather(*(translate_results(translator) for _ in range(3)))
+
+            translation_task = asyncio.create_task(run_translation_workers())
 
             async def forward_results() -> None:
                 while True:
@@ -381,7 +410,9 @@ async def live_socket(ws: WebSocket) -> None:
                                     "target": translation_target,
                                 })
                             except asyncio.QueueFull:
-                                await ws.send_json({"type": "translation_error", "message": "File de traduction pleine ; des segments peuvent manquer."})
+                                message = {"type": "translation_error", "id": translation_id, "message": "File de traduction pleine ; le texte original est conservé."}
+                                await ws.send_json(message)
+                                await broadcast(message)
                     await ws.send_json({"type": "deepgram_event", "event": result.get("type", "Message")})
                     await ws.send_json({"type": "transcript", "data": result})
                     try:
