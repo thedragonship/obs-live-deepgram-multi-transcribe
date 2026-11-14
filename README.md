@@ -3,9 +3,9 @@
 <p align="center"><img src="ui/assets/dragonship-tools.png" alt="DragonShip Tools" width="520"></p>
 <p align="center">Créé par <a href="https://www.dragonship.eu"><strong>DragonShip Tools</strong> (www.dragonship.eu)</a></p>
 
-Application de bureau légère pour afficher des sous-titres Deepgram en direct dans OBS. L'interface utilise la fenêtre native du système (WebView2 sur Windows, WebKit sur macOS) et reste un petit serveur local Python. OBS affiche une page locale séparée en tant que source navigateur.
+Application de bureau légère pour afficher des sous-titres Deepgram en direct dans OBS, destinée aux streamers qui veulent transcrire leur voix ou le son d’une vidéo qu’ils regardent. L'interface utilise la fenêtre native du système (WebView2 sur Windows, WebKit sur macOS) et reste un petit serveur local Python. OBS affiche une page locale séparée en tant que source navigateur.
 
-> Fonctionnalités : capture d'une entrée audio, transcription en direct avec diarisation, traduction à la demande via LibreTranslate et overlay OBS. La transcription multilingue de Deepgram reconnaît plusieurs langues ; elle ne traduit pas le texte à elle seule.
+> Fonctionnalités : capture d'une entrée audio, transcription en direct avec diarisation, traduction à la demande via Azure Translator ou LibreTranslate et overlay OBS. La transcription multilingue de Deepgram reconnaît plusieurs langues ; elle ne traduit pas le texte à elle seule.
 
 ## Fonctionnement
 
@@ -137,15 +137,9 @@ Sur Windows, installez Inno Setup 6, téléchargez le [bootstrapper WebView2 off
 
 Pour une compilation manuelle macOS, exécutez `bash make_macos_icon.sh` avant PyInstaller afin de générer l'icône `.icns` depuis le PNG transparent. Le workflow GitHub Actions effectue cette étape automatiquement.
 
-## Fonctionnalité à venir : entrées audio multiples
-
-Une évolution prévue est de pouvoir sélectionner plusieurs entrées audio distinctes et associer chacune à un locuteur. C’est particulièrement utile en studio de podcast, où chaque personne peut avoir son propre micro : les voix restent séparées au lieu de demander à Deepgram de distinguer les interlocuteurs dans un mix commun. Cela devrait réduire les confusions de diarisation dues aux chevauchements, mais la précision dépendra toujours de la qualité du signal et du routage audio.
-
-Cette fonction augmentera généralement les coûts en proportion de la durée de chaque flux ou canal envoyé. Par exemple, deux micros traités pendant une heure représentent environ deux heures audio facturables ; trois micros pendant une heure, environ trois heures. Le coût exact dépendra du modèle, du nombre de canaux et des options de transcription. Consultez les [tarifs Deepgram](https://deepgram.com/pricing) et la documentation du paramètre [multichannel](https://developers.deepgram.com/reference/speech-to-text/listen-streaming). L’estimation du dashboard devra aussi prendre en compte le nombre d’entrées actives lorsqu’elles seront implémentées.
-
 ## Limites de cette version
 
-- Une seule entrée audio mixée ; pour des sous-titres séparés par source, il faut router micro et audio de bureau vers des entrées différentes et ajouter plusieurs sessions.
+- Une seule entrée audio à la fois : choisissez le micro pour transcrire votre voix, ou une entrée qui capte le son système/vidéo pour sous-titrer ce que vous regardez. Pour capter les deux ensemble, routez-les vers un mix audio virtuel. Cette version vise ces usages de streaming et de visionnage, sans attribution séparée de plusieurs micros à des participants.
 - La diarisation attribue des indices (`Locuteur 1`, `Locuteur 2`), sans connaître les identités réelles. Sur un mix, les chevauchements et la musique peuvent réduire la précision.
 - La traduction utilise une instance publique, qui peut avoir de la latence, des limites ou des interruptions. Elle est désactivée par défaut et ne doit pas être utilisée pour du contenu confidentiel.
 - Pas de test sur un compte Deepgram ni de validation audio/OBS sur les deux systèmes depuis cet environnement.
