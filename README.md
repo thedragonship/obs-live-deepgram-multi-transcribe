@@ -28,7 +28,7 @@ La traduction traite uniquement les segments finaux de transcription. **Aucun au
 
 1. Dans le portail Azure, créez une ressource **Translator** sur le niveau gratuit **F0**.
 2. Copiez une clé de la ressource et collez-la dans **Configuration → Clé Azure Translator**.
-3. Si Azure affiche une région pour la ressource, saisissez-la dans **Région Azure**. Pour une ressource globale Translator à service unique, la région peut être laissée vide.
+3. Dans **Région Azure**, sélectionnez l’identifiant affiché pour la région de la ressource (par exemple **Switzerland West — `switzerlandwest`**). Pour une ressource globale Translator à service unique, laissez **Global — laisser vide** sélectionné. Les identifiants courants sont proposés dans la liste ; **Autre région…** permet de saisir un identifiant absent.
 4. Enregistrez la configuration, choisissez la langue cible et activez la traduction pendant une session.
 
 La clé Azure est conservée dans le fichier de configuration local du profil utilisateur, comme la clé Deepgram. Ce fichier n’est pas chiffré : protégez votre compte Windows/macOS et ne partagez pas ce fichier. L’application ne transmet pas la clé Azure à Deepgram, à OBS ou à LibreTranslate.
