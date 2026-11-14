@@ -23,6 +23,7 @@ overlay_history: list[dict[str, Any]] = []
 translation_history: dict[str, dict[str, str]] = {}
 translation_mode_enabled = bool(load_settings().get("translationMode", False))
 LIBRETRANSLATE_URL = "https://translate.cutie.dating"
+AZURE_TRANSLATOR_URL = "https://api.cognitive.microsofttranslator.com"
 DEFAULT_OVERLAY_COLORS = {
     "1": "#ff5964", "2": "#ff9f43", "3": "#d789ff",
     "4": "#ffd166", "5": "#ff7892", "6": "#e6a3ff",
@@ -35,6 +36,15 @@ overlay_colors = {
         **(_saved_overlay_colors if isinstance(_saved_overlay_colors, dict) else {}),
     }.items()
     if speaker in DEFAULT_OVERLAY_COLORS
+}
+OVERLAY_SETTINGS_DEFAULT = {"alignment": "center", "bubbleColor": "#000000", "borderColor": "#ff5364", "displaySeconds": 9}
+_saved_overlay_settings = load_settings().get("overlaySettings", {})
+_saved_overlay_settings = _saved_overlay_settings if isinstance(_saved_overlay_settings, dict) else {}
+overlay_settings = {
+    "alignment": _saved_overlay_settings.get("alignment") if _saved_overlay_settings.get("alignment") in ("left", "center", "right") else OVERLAY_SETTINGS_DEFAULT["alignment"],
+    "bubbleColor": _saved_overlay_settings.get("bubbleColor") if isinstance(_saved_overlay_settings.get("bubbleColor"), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", _saved_overlay_settings.get("bubbleColor")) else OVERLAY_SETTINGS_DEFAULT["bubbleColor"],
+    "borderColor": _saved_overlay_settings.get("borderColor") if isinstance(_saved_overlay_settings.get("borderColor"), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", _saved_overlay_settings.get("borderColor")) else OVERLAY_SETTINGS_DEFAULT["borderColor"],
+    "displaySeconds": _saved_overlay_settings.get("displaySeconds") if isinstance(_saved_overlay_settings.get("displaySeconds"), int) and 3 <= _saved_overlay_settings.get("displaySeconds") <= 60 else OVERLAY_SETTINGS_DEFAULT["displaySeconds"],
 }
 
 
@@ -71,29 +81,72 @@ async def save_api_key(payload: dict[str, Any]) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/api/overlay/settings")
+async def get_overlay_settings() -> dict[str, Any]:
+    return dict(overlay_settings)
+
+
+@app.post("/api/overlay/settings")
+async def set_overlay_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    alignment = str(payload.get("alignment", overlay_settings["alignment"]))
+    bubble_color = str(payload.get("bubbleColor", overlay_settings["bubbleColor"])).lower()
+    border_color = str(payload.get("borderColor", overlay_settings["borderColor"])).lower()
+    try:
+        display_seconds = int(payload.get("displaySeconds", overlay_settings["displaySeconds"]))
+    except (TypeError, ValueError):
+        return {"ok": False, "message": "La durée doit être comprise entre 3 et 60 secondes."}
+    if alignment not in ("left", "center", "right"):
+        return {"ok": False, "message": "Alignement invalide."}
+    if not re.fullmatch(r"#[0-9a-f]{6}", bubble_color) or not re.fullmatch(r"#[0-9a-f]{6}", border_color):
+        return {"ok": False, "message": "Choisissez des couleurs hexadécimales valides."}
+    if not 3 <= display_seconds <= 60:
+        return {"ok": False, "message": "La durée doit être comprise entre 3 et 60 secondes."}
+    overlay_settings.update(alignment=alignment, bubbleColor=bubble_color, borderColor=border_color, displaySeconds=display_seconds)
+    save_settings(overlaySettings=overlay_settings)
+    await broadcast({"type": "overlay_settings", **overlay_settings})
+    return {"ok": True, **overlay_settings}
+
+
 @app.get("/api/translation/config")
 async def get_translation_config() -> dict[str, Any]:
     settings = load_settings()
     return {
         "targetLanguage": str(settings.get("translationTarget", "en")).lower(),
+        "provider": str(settings.get("translationProvider", "azure")).lower(),
+        "azureConfigured": bool(settings.get("azureTranslatorKey")),
+        "azureRegion": str(settings.get("azureTranslatorRegion", "")),
         "enabled": translation_mode_enabled,
     }
 
 
 @app.post("/api/translation/config")
 async def set_translation_config(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = load_settings()
     target = str(payload.get("targetLanguage", "en")).lower()
+    provider = str(payload.get("provider", settings.get("translationProvider", "azure"))).lower()
+    region = str(payload.get("azureRegion", settings.get("azureTranslatorRegion", ""))).strip()
+    if provider not in ("azure", "libretranslate"):
+        return {"ok": False, "message": "Moteur de traduction invalide."}
     if not re.fullmatch(r"[a-z]{2,3}(?:-[a-z0-9]{2,8})?", target):
         return {"ok": False, "message": "Code de langue cible invalide."}
-    save_settings(translationTarget=target)
+    updates: dict[str, Any] = {"translationTarget": target, "translationProvider": provider, "azureTranslatorRegion": region}
+    if payload.get("clearAzureKey"):
+        updates["azureTranslatorKey"] = ""
+    elif "azureKey" in payload:
+        updates["azureTranslatorKey"] = str(payload.get("azureKey", "")).strip()
+    save_settings(**updates)
     await broadcast({"type": "settings", "translationTarget": target})
-    return {"ok": True, "targetLanguage": target}
+    return {"ok": True, "targetLanguage": target, "provider": provider, "azureConfigured": bool(updates.get("azureTranslatorKey", settings.get("azureTranslatorKey", ""))), "azureRegion": region}
 
 
 @app.post("/api/translation/mode")
 async def set_translation_mode(payload: dict[str, Any]) -> dict[str, Any]:
     global translation_mode_enabled
     enabled = bool(payload.get("enabled", False))
+    settings = load_settings()
+    provider = str(settings.get("translationProvider", "azure")).lower()
+    if enabled and provider == "azure" and not settings.get("azureTranslatorKey"):
+        return {"ok": False, "message": "Collez d’abord la clé Azure Translator dans Configuration."}
     translation_mode_enabled = enabled
     save_settings(translationMode=enabled)
     await broadcast({"type": "translation_mode", "enabled": enabled})
@@ -112,15 +165,50 @@ async def libretranslate(http: httpx.AsyncClient, text: str, source: str, target
     return str(translated)
 
 
+async def azure_translate(http: httpx.AsyncClient, text: str, source: str, target: str, key: str, region: str) -> str:
+    params = {"api-version": "3.0", "to": target.lower()}
+    if source and source not in ("auto", "multi"):
+        params["from"] = source.lower()
+    headers = {"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json; charset=UTF-8"}
+    if region:
+        headers["Ocp-Apim-Subscription-Region"] = region
+    response = await http.post(
+        f"{AZURE_TRANSLATOR_URL}/translate",
+        params=params,
+        headers=headers,
+        json=[{"Text": text}],
+    )
+    response.raise_for_status()
+    result = response.json()
+    translations = result[0].get("translations", []) if isinstance(result, list) and result else []
+    if not translations or not translations[0].get("text"):
+        raise RuntimeError("Azure Translator n’a renvoyé aucune traduction.")
+    return str(translations[0]["text"])
+
+
 @app.get("/api/translation/languages")
 async def translation_languages() -> dict[str, Any]:
+    settings = load_settings()
+    provider = str(settings.get("translationProvider", "azure")).lower()
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
+            if provider == "azure":
+                response = await client.get(
+                    f"{AZURE_TRANSLATOR_URL}/languages",
+                    params={"api-version": "3.0", "scope": "translation"},
+                )
+                response.raise_for_status()
+                language_data = response.json().get("translation", {})
+                languages = [
+                    {"code": code, "name": value.get("name", code), "targets": list(language_data)}
+                    for code, value in language_data.items()
+                ]
+                return {"languages": languages, "provider": provider}
             response = await client.get(f"{LIBRETRANSLATE_URL}/languages")
             response.raise_for_status()
-            return {"languages": response.json()}
+            return {"languages": response.json(), "provider": "libretranslate"}
     except Exception as exc:
-        return {"languages": [], "message": str(exc)}
+        return {"languages": [], "provider": provider, "message": str(exc)}
 
 
 @app.post("/api/config/port")
@@ -247,6 +335,7 @@ async def overlay_socket(ws: WebSocket) -> None:
             "type": "settings", "colors": overlay_colors,
             "translationTarget": load_settings().get("translationTarget", "en"),
         })
+        await ws.send_json({"type": "overlay_settings", **overlay_settings})
         await ws.send_json({"type": "translation_mode", "enabled": translation_mode_enabled})
         # Replay a small recent buffer so OBS sources opened after transcription
         # has started do not appear empty until the next phrase is spoken.
@@ -277,6 +366,9 @@ async def live_socket(ws: WebSocket) -> None:
         translation_queue: asyncio.Queue[dict[str, str]] = asyncio.Queue(maxsize=60)
         saved_translation = load_settings()
         translation_target = str(saved_translation.get("translationTarget", "en")).lower()
+        translation_provider = str(saved_translation.get("translationProvider", "azure")).lower()
+        azure_key = str(saved_translation.get("azureTranslatorKey", "")).strip()
+        azure_region = str(saved_translation.get("azureTranslatorRegion", "")).strip()
         connection_opened = asyncio.Event()
         listener_task: asyncio.Task | None = None
         translation_task: asyncio.Task | None = None
@@ -325,6 +417,10 @@ async def live_socket(ws: WebSocket) -> None:
                     try:
                         if item["source"] != "auto" and item["source"] == item["target"]:
                             translated_text = item["text"]
+                        elif item["provider"] == "azure":
+                            translated_text = await azure_translate(
+                                translator, item["text"], item["source"], item["target"], item["azureKey"], item["azureRegion"]
+                            )
                         else:
                             translated_text = await libretranslate(
                                 translator, item["text"], item["source"], item["target"]
@@ -335,14 +431,14 @@ async def live_socket(ws: WebSocket) -> None:
                     except asyncio.CancelledError:
                         raise
                     except httpx.TimeoutException:
-                        message = {"type": "translation_error", "id": item["id"], "message": "Délai dépassé : le serveur de traduction ne répond pas. Le texte original est conservé."}
+                        message = {"type": "translation_error", "id": item["id"], "message": f"Délai dépassé : {item['provider']} ne répond pas. Le texte original est conservé."}
                         try:
                             await ws.send_json(message)
                         except Exception:
                             pass
                         await broadcast(message)
                     except httpx.ConnectError:
-                        message = {"type": "translation_error", "id": item["id"], "message": "Serveur de traduction injoignable (DNS ou réseau). Le texte original est conservé."}
+                        message = {"type": "translation_error", "id": item["id"], "message": f"Service {item['provider']} injoignable (DNS ou réseau). Le texte original est conservé."}
                         try:
                             await ws.send_json(message)
                         except Exception:
@@ -350,15 +446,21 @@ async def live_socket(ws: WebSocket) -> None:
                         await broadcast(message)
                     except httpx.HTTPStatusError as exc:
                         status_code = exc.response.status_code
-                        detail = "limite de requêtes atteinte" if status_code == 429 else "accès refusé" if status_code in (401, 403) else f"erreur HTTP {status_code}"
-                        message = {"type": "translation_error", "id": item["id"], "message": f"LibreTranslate : {detail}. Le texte original est conservé."}
+                        if item["provider"] == "azure":
+                            detail = "clé invalide" if status_code == 401 else "vérifiez la clé, la région et le quota F0" if status_code == 403 else "limite temporaire de requêtes" if status_code == 429 else f"erreur HTTP {status_code}"
+                            provider_name = "Azure Translator"
+                        else:
+                            detail = "limite de requêtes atteinte" if status_code == 429 else "accès refusé" if status_code in (401, 403) else f"erreur HTTP {status_code}"
+                            provider_name = "LibreTranslate"
+                        message = {"type": "translation_error", "id": item["id"], "message": f"{provider_name} : {detail}. Le texte original est conservé."}
                         try:
                             await ws.send_json(message)
                         except Exception:
                             pass
                         await broadcast(message)
                     except Exception:
-                        message = {"type": "translation_error", "id": item["id"], "message": "Erreur LibreTranslate. Le texte original est conservé."}
+                        provider_name = "Azure Translator" if item["provider"] == "azure" else "LibreTranslate"
+                        message = {"type": "translation_error", "id": item["id"], "message": f"Erreur {provider_name}. Le texte original est conservé."}
                         try:
                             await ws.send_json(message)
                         except Exception:
@@ -393,6 +495,10 @@ async def live_socket(ws: WebSocket) -> None:
                         translation_id = uuid.uuid4().hex
                         result["_translationId"] = translation_id
                         if translation_mode_enabled:
+                            if translation_provider == "azure" and not azure_key:
+                                message = {"type": "translation_error", "id": translation_id, "message": "Ajoutez la clé Azure Translator dans Configuration. Le texte original est conservé."}
+                                await ws.send_json(message)
+                                await broadcast(message)
                             source_languages = alt.get("languages") or []
                             source_language = str(source_languages[0]) if source_languages else ""
                             if not source_language and isinstance(alt.get("words"), list):
@@ -403,12 +509,16 @@ async def live_socket(ws: WebSocket) -> None:
                             if source_language == "multi":
                                 source_language = "auto"
                             try:
-                                translation_queue.put_nowait({
-                                    "id": translation_id,
-                                    "text": str(alt["transcript"]),
-                                    "source": source_language,
-                                    "target": translation_target,
-                                })
+                                if translation_provider != "azure" or azure_key:
+                                    translation_queue.put_nowait({
+                                        "id": translation_id,
+                                        "text": str(alt["transcript"]),
+                                        "source": source_language,
+                                        "target": translation_target,
+                                        "provider": translation_provider,
+                                        "azureKey": azure_key,
+                                        "azureRegion": azure_region,
+                                    })
                             except asyncio.QueueFull:
                                 message = {"type": "translation_error", "id": translation_id, "message": "File de traduction pleine ; le texte original est conservé."}
                                 await ws.send_json(message)
@@ -483,3 +593,9 @@ async def live_socket(ws: WebSocket) -> None:
     finally:
         if client is not None:
             await client.close()
+        overlay_history.clear()
+        translation_history.clear()
+        try:
+            await broadcast({"type": "transcription_stopped"})
+        except Exception:
+            pass
