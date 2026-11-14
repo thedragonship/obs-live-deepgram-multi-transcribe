@@ -137,6 +137,12 @@ Sur Windows, installez Inno Setup 6, téléchargez le [bootstrapper WebView2 off
 
 Pour une compilation manuelle macOS, exécutez `bash make_macos_icon.sh` avant PyInstaller afin de générer l'icône `.icns` depuis le PNG transparent. Le workflow GitHub Actions effectue cette étape automatiquement.
 
+## Fonctionnalité à venir : entrées audio multiples
+
+Une évolution prévue est de pouvoir sélectionner plusieurs entrées audio distinctes et associer chacune à un locuteur. C’est particulièrement utile en studio de podcast, où chaque personne peut avoir son propre micro : les voix restent séparées au lieu de demander à Deepgram de distinguer les interlocuteurs dans un mix commun. Cela devrait réduire les confusions de diarisation dues aux chevauchements, mais la précision dépendra toujours de la qualité du signal et du routage audio.
+
+Cette fonction augmentera généralement les coûts en proportion de la durée de chaque flux ou canal envoyé. Par exemple, deux micros traités pendant une heure représentent environ deux heures audio facturables ; trois micros pendant une heure, environ trois heures. Le coût exact dépendra du modèle, du nombre de canaux et des options de transcription. Consultez les [tarifs Deepgram](https://deepgram.com/pricing) et la documentation du paramètre [multichannel](https://developers.deepgram.com/reference/speech-to-text/listen-streaming). L’estimation du dashboard devra aussi prendre en compte le nombre d’entrées actives lorsqu’elles seront implémentées.
+
 ## Limites de cette version
 
 - Une seule entrée audio mixée ; pour des sous-titres séparés par source, il faut router micro et audio de bureau vers des entrées différentes et ajouter plusieurs sessions.
