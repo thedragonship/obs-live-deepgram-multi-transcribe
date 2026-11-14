@@ -18,11 +18,28 @@ Application de bureau légère pour afficher des sous-titres Deepgram en direct 
 
 L'audio est envoyé à Deepgram pour traitement. Consultez les conditions et la tarification Deepgram avant un stream prolongé. La clé API est enregistrée localement dans le fichier de configuration de votre profil utilisateur, séparé du dépôt : `%APPDATA%/obs-live-deepgram-multi-transcribe/config.json` sous Windows, `~/Library/Application Support/obs-live-deepgram-multi-transcribe/config.json` sous macOS, ou `$XDG_CONFIG_HOME/obs-live-deepgram-multi-transcribe/config.json` sous Linux. Le fichier n'est pas chiffré ; protégez votre compte utilisateur, utilisez une clé dédiée et révoquez-la si vous pensez qu'elle a été exposée.
 
-### Traduction libre via LibreTranslate
+### Traduction en direct : Azure Translator ou LibreTranslate
 
-La traduction est désactivée par défaut. Choisissez une langue cible dans **Configuration**, puis activez **Afficher la traduction** dans **Session & OBS**. Le bouton revient au texte original et arrête de mettre les nouveaux segments en file d'attente ; les segments déjà en file peuvent toutefois partir et finir leur traduction.
+La traduction est désactivée par défaut. Dans **Configuration**, sélectionnez Azure Translator ou LibreTranslate, choisissez la langue cible et enregistrez. Activez ensuite **Afficher la traduction** dans **Session & OBS** pour basculer entre le texte original et le texte traduit. Le changement de mode s’applique au dashboard et à l’overlay OBS.
 
-Le dashboard envoie uniquement le texte final des segments au service public `translate.cutie.dating` quand le mode traduit est actif. L'audio, la clé Deepgram et l'identité des locuteurs ne sont pas envoyés par la fonction de traduction. Le service public ne demande actuellement pas de clé à cette application et il n'y a aucun recours automatique à une API payante ; ses règles, quotas, délais et disponibilité peuvent toutefois changer. Comme pour tout service public en ligne, évitez cette fonction pour des conversations confidentielles et consultez la politique du fournisseur si la confidentialité est importante. La traduction peut ajouter du délai ou échouer si le service est indisponible ou limite les requêtes. En cas d’erreur, le tableau de bord et l’overlay signalent l’échec par segment et conservent le texte original.
+La traduction traite uniquement les segments finaux de transcription. **Aucun audio n’est envoyé au fournisseur de traduction.** Avec Azure, seul le texte final est envoyé à Microsoft ; avec LibreTranslate, seul le texte final est envoyé au serveur public sélectionné. Il n’y a pas de bascule automatique vers l’autre fournisseur. Les erreurs laissent le texte original visible.
+
+#### Configurer Azure Translator F0
+
+1. Dans le portail Azure, créez une ressource **Translator** sur le niveau gratuit **F0**.
+2. Copiez une clé de la ressource et collez-la dans **Configuration → Clé Azure Translator**.
+3. Si Azure affiche une région pour la ressource, saisissez-la dans **Région Azure**. Pour une ressource globale Translator à service unique, la région peut être laissée vide.
+4. Enregistrez la configuration, choisissez la langue cible et activez la traduction pendant une session.
+
+La clé Azure est conservée dans le fichier de configuration local du profil utilisateur, comme la clé Deepgram. Ce fichier n’est pas chiffré : protégez votre compte Windows/macOS et ne partagez pas ce fichier. L’application ne transmet pas la clé Azure à Deepgram, à OBS ou à LibreTranslate.
+
+Le niveau F0 inclut jusqu’à **2 millions de caractères par mois**, sous réserve des conditions et limites Azure en vigueur. À titre d’ordre de grandeur seulement, cela représente environ **35 à 43 heures de parole active** si l’on suppose 130 à 160 mots/minute et six caractères par mot. Le débit réel varie fortement selon la langue, les silences et la segmentation. Vérifiez le quota et les tarifs actuels dans Azure avant un usage prolongé.
+
+Documentation officielle : [Créer et utiliser une ressource Translator](https://learn.microsoft.com/azure/ai-services/translator/text-translation/how-to/use-rest-api) · [Tarifs Translator](https://azure.microsoft.com/pricing/details/cognitive-services/translator/).
+
+#### LibreTranslate public
+
+LibreTranslate reste une alternative communautaire sans clé configurée dans l’application. Le serveur public peut être indisponible, lent, appliquer ses propres limites ou changer ses règles ; son usage n’est pas garanti gratuit. Évitez d’y envoyer des conversations confidentielles. Aucun texte n’est envoyé à ce service lorsque Azure est sélectionné.
 
 ## Coûts Deepgram
 
@@ -80,9 +97,16 @@ Ces pilotes sont externes au projet et ne sont pas installés automatiquement.
 
 ## OBS
 
-Dans l'onglet **Session & OBS**, choisissez les couleurs des noms de six locuteurs ; elles sont enregistrées localement et synchronisées avec l'overlay OBS. Chaque ligne disparaît après neuf secondes, de la plus ancienne à la plus récente. Utilisez **Copier l’URL OBS** pour coller l'adresse dans une **Source navigateur**. L’adresse complète n’est pas affichée dans le dashboard ; **Ouvrir l’overlay** permet de vérifier le rendu dans une fenêtre séparée. Port par défaut : `8765`. Taille conseillée : 1920 × 1080. L'overlay est transparent et se met à jour tant que l'application tourne.
+Dans l’onglet **Session & OBS**, réglez la couleur des noms de locuteurs et copiez l’adresse de la source navigateur OBS. L’adresse complète reste masquée dans le dashboard ; utilisez **Ouvrir l’overlay** pour vérifier son rendu. Port par défaut : `8765`. Taille conseillée : 1920 × 1080.
 
-Choisissez la langue cible dans **Configuration**, puis cliquez sur **Afficher la traduction** dans **Session & OBS** pour basculer en direct entre texte original et texte traduit. Le même mode s'applique au dashboard et à l'overlay OBS. La traduction commence lorsque le segment Deepgram est finalisé, donc elle peut apparaître un peu après l'original. La sélection d'une langue source précise donne une meilleure détection ; avec **Détection multilingue**, le texte de chaque segment utilise la langue détectée par Deepgram quand elle est disponible.
+L’onglet **Overlay OBS** permet de configurer :
+
+- l’alignement des bulles à gauche, au centre ou à droite ;
+- la couleur de fond et la couleur de bordure des bulles ;
+- la durée d’affichage de chaque ligne, de 3 à 60 secondes. Chaque sous-titre expire selon son propre délai ; les plus anciens disparaissent en premier ;
+- l’overlay vide ses sous-titres dès que la transcription s’arrête.
+
+Les réglages sont enregistrés localement et synchronisés avec la source OBS. La page d’overlay a un fond transparent.
 
 ## Installation pour les utilisateurs
 
