@@ -102,7 +102,8 @@ Dans l’onglet **Session & OBS**, réglez la couleur des noms de locuteurs et c
 L’onglet **Overlay OBS** permet de configurer :
 
 - l’alignement des bulles à gauche, au centre ou à droite ;
-- la couleur de fond et la couleur de bordure des bulles ;
+- la couleur du fond et de la bordure, avec une opacité réglable séparément de 0 à 100 % ;
+- le masquage individuel du préfixe de locuteur (par exemple « Locuteur 1 »), tout en conservant son texte transcrit ;
 - la durée d’affichage de chaque ligne, de 3 à 60 secondes. Chaque sous-titre expire selon son propre délai ; les plus anciens disparaissent en premier ;
 - l’overlay vide ses sous-titres dès que la transcription s’arrête.
 
