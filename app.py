@@ -37,7 +37,7 @@ overlay_colors = {
     }.items()
     if speaker in DEFAULT_OVERLAY_COLORS
 }
-OVERLAY_SETTINGS_DEFAULT = {"alignment": "center", "bubbleColor": "#000000", "borderColor": "#ff5364", "displaySeconds": 9}
+OVERLAY_SETTINGS_DEFAULT = {"alignment": "center", "bubbleColor": "#000000", "borderColor": "#ff5364", "bubbleOpacity": 76, "borderOpacity": 100, "displaySeconds": 9, "hiddenSpeakers": []}
 _saved_overlay_settings = load_settings().get("overlaySettings", {})
 _saved_overlay_settings = _saved_overlay_settings if isinstance(_saved_overlay_settings, dict) else {}
 overlay_settings = {
@@ -45,6 +45,9 @@ overlay_settings = {
     "bubbleColor": _saved_overlay_settings.get("bubbleColor") if isinstance(_saved_overlay_settings.get("bubbleColor"), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", _saved_overlay_settings.get("bubbleColor")) else OVERLAY_SETTINGS_DEFAULT["bubbleColor"],
     "borderColor": _saved_overlay_settings.get("borderColor") if isinstance(_saved_overlay_settings.get("borderColor"), str) and re.fullmatch(r"#[0-9a-fA-F]{6}", _saved_overlay_settings.get("borderColor")) else OVERLAY_SETTINGS_DEFAULT["borderColor"],
     "displaySeconds": _saved_overlay_settings.get("displaySeconds") if isinstance(_saved_overlay_settings.get("displaySeconds"), int) and 3 <= _saved_overlay_settings.get("displaySeconds") <= 60 else OVERLAY_SETTINGS_DEFAULT["displaySeconds"],
+    "bubbleOpacity": _saved_overlay_settings.get("bubbleOpacity") if isinstance(_saved_overlay_settings.get("bubbleOpacity"), int) and 0 <= _saved_overlay_settings.get("bubbleOpacity") <= 100 else OVERLAY_SETTINGS_DEFAULT["bubbleOpacity"],
+    "borderOpacity": _saved_overlay_settings.get("borderOpacity") if isinstance(_saved_overlay_settings.get("borderOpacity"), int) and 0 <= _saved_overlay_settings.get("borderOpacity") <= 100 else OVERLAY_SETTINGS_DEFAULT["borderOpacity"],
+    "hiddenSpeakers": [str(value) for value in _saved_overlay_settings.get("hiddenSpeakers", []) if str(value) in DEFAULT_OVERLAY_COLORS] if isinstance(_saved_overlay_settings.get("hiddenSpeakers", []), list) else [],
 }
 
 
@@ -93,15 +96,23 @@ async def set_overlay_settings(payload: dict[str, Any]) -> dict[str, Any]:
     border_color = str(payload.get("borderColor", overlay_settings["borderColor"])).lower()
     try:
         display_seconds = int(payload.get("displaySeconds", overlay_settings["displaySeconds"]))
+        bubble_opacity = int(payload.get("bubbleOpacity", overlay_settings["bubbleOpacity"]))
+        border_opacity = int(payload.get("borderOpacity", overlay_settings["borderOpacity"]))
     except (TypeError, ValueError):
-        return {"ok": False, "message": "La durée doit être comprise entre 3 et 60 secondes."}
+        return {"ok": False, "message": "La durée et les opacités doivent être des nombres valides."}
     if alignment not in ("left", "center", "right"):
         return {"ok": False, "message": "Alignement invalide."}
     if not re.fullmatch(r"#[0-9a-f]{6}", bubble_color) or not re.fullmatch(r"#[0-9a-f]{6}", border_color):
         return {"ok": False, "message": "Choisissez des couleurs hexadécimales valides."}
     if not 3 <= display_seconds <= 60:
         return {"ok": False, "message": "La durée doit être comprise entre 3 et 60 secondes."}
-    overlay_settings.update(alignment=alignment, bubbleColor=bubble_color, borderColor=border_color, displaySeconds=display_seconds)
+    if not 0 <= bubble_opacity <= 100 or not 0 <= border_opacity <= 100:
+        return {"ok": False, "message": "Les opacités doivent être comprises entre 0 et 100 %."}
+    hidden_speakers = payload.get("hiddenSpeakers", overlay_settings["hiddenSpeakers"])
+    if not isinstance(hidden_speakers, list):
+        return {"ok": False, "message": "La liste des locuteurs masqués est invalide."}
+    hidden_speakers = sorted({str(value) for value in hidden_speakers if str(value) in DEFAULT_OVERLAY_COLORS}, key=int)
+    overlay_settings.update(alignment=alignment, bubbleColor=bubble_color, borderColor=border_color, bubbleOpacity=bubble_opacity, borderOpacity=border_opacity, displaySeconds=display_seconds, hiddenSpeakers=hidden_speakers)
     save_settings(overlaySettings=overlay_settings)
     await broadcast({"type": "overlay_settings", **overlay_settings})
     return {"ok": True, **overlay_settings}
